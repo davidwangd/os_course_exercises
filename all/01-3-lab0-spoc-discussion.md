@@ -18,13 +18,24 @@
 
 - 你理解的对于类似ucore这样需要进程/虚存/文件系统的操作系统，在硬件设计上至少需要有哪些直接的支持？至少应该提供哪些功能的特权指令？
 
+在硬件上需要能够支持内部/外部中断，需要支持虚拟内存的。
+需要支持int/iret/lidt等有关中断的指令。
+需要支持syscall等能够从用户态切换到内核态的系统调用指令。
+
 - 你理解的x86的实模式和保护模式有什么区别？物理地址、线性地址、逻辑地址的含义分别是什么？
+
+x86的实模式是8086的一个加强版，只有20位数据线，寄存器宽度只有16位，是机器启动的时候默认的模式，我们需要在实模式中执行boot进入保护模式。
+
+x86的保护模式是真正的运行模式，拥有32位寄存器和32位数据总线，4G内存。
+
+物理地址是实际内存的地址，在没有开启段式内存的时候，线性地址就是物理地址。逻辑地址是CPU运行时进程认为的地址。
 
 - 你理解的risc-v的特权模式有什么区别？不同 模式在地址访问方面有何特征？
 
 - 理解ucore中list_entry双向链表数据结构及其4个基本操作函数和ucore中一些基于它的代码实现（此题不用填写内容）
 
 - 对于如下的代码段，请说明":"后面的数字是什么含义
+：后面是变量所占的bit数。
 ```
  /* Gate descriptors for interrupts and traps */
  struct gatedesc {
@@ -62,12 +73,63 @@ intr=8;
 SETGATE(intr, 1,2,3,0);
 ```
 请问执行上述指令后， intr的值是多少？
+这个编译不通过吧。。
 
 ### 课堂实践练习
 
 #### 练习一
 
 1. 请在ucore中找一段你认为难度适当的AT&T格式X86汇编代码，尝试解释其含义。
+
+```
+#include <memlayout.h>
+
+# vectors.S sends all traps here.
+.text
+.globl __alltraps
+__alltraps:
+    # push registers to build a trap frame
+    # therefore make the stack look like a struct trapframe
+    pushl %ds
+    pushl %es
+    pushl %fs
+    pushl %gs
+    pushal
+
+    # load GD_KDATA into %ds and %es to set up data segments for kernel
+    movl $GD_KDATA, %eax
+    movw %ax, %ds
+    movw %ax, %es
+
+    # push %esp to pass a pointer to the trapframe as an argument to trap()
+    pushl %esp
+
+    # call trap(tf), where tf=%esp
+    call trap
+
+    # pop the pushed stack pointer
+    popl %esp
+
+    # return falls through to trapret...
+.globl __trapret
+__trapret:
+    # restore registers from stack
+    popal
+
+    # restore %ds, %es, %fs and %gs
+    popl %gs
+    popl %fs
+    popl %es
+    popl %ds
+
+    # get rid of the trap number and error code
+    addl $0x8, %esp
+    iret
+ ```
+ 这段代码是中断调用和中断返回所用到的代码。
+ 首先压栈 ds, es, fs, gs 让他们看起来像一个trapframe。然后将代码段和数据段的内容转移到内核态。为trap(tf\*)进行传参,之后调用trap函数。
+ 
+ 在trap函数返回之后，恢复之前保存的段寄存器的内容（在实验一挑战中正是利用这一点来进行内核态和用户态的切换的），将进入中断前的栈寄存器恢复。
 
 2. (option)请在rcore中找一段你认为难度适当的RV汇编代码，尝试解释其含义。
 
